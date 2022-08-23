@@ -1,0 +1,180 @@
+---
+title: "hwk1"
+author: "Tanxin Liu"
+date: "2022/5/3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+basic tasks are:
+- loading the data
+- make a SummarizedExperiment
+- make a MA plot
+- do a differential expression analysis
+
+```{r, echo=TRUE}
+setwd("F:/2022 fourth term/statistic for genomics/homework1/hwk1")
+load("hwkdata.rda")
+hwkdata<- features_by_samples_mat
+```
+
+
+```{r, echo=TRUE}
+#install.packages("BiocManager")
+library(BiocManager)
+BiocManager::install(c("limma", "edgeR", "DESeq2"),force = TRUE)
+```
+
+1. EDA
+```{r, echo=TRUE}
+class(features_by_samples_mat)
+head(features_by_samples_mat)
+colSums(features_by_samples_mat)
+range(colSums(features_by_samples_mat))
+##8-10 thousand ncRNA, repetitative regions, psedogenes,
+```
+
+mouse model mendelian disorder
+mouse lines  knocked out 3 different genes
+CBP binding protein  Mendelian disorder
+WT: Wild-type   wild-type mice
+different genes: not crazily differentially expressions
+profile  two different cells-types -B and T cells 
+Number: mouse number   5_B_WT   5_T_WT  same blood sample from the mouse
+B cells and T cells
+What is the difference between B cells and T cells; between mutatant and wild type?
+
+```{r, echo=TRUE}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install(c("GenomeInfoDb"),force = TRUE)
+BiocManager::install(c("SummarizedExperiment"),force = TRUE)
+library(SummarizedExperiment)
+se=SummarizedExperiment(features_by_samples_mat)
+se=SummarizedExperiment(assays = SimpleList(counts=features_by_samples_mat))
+se
+```
+
+2.
+differentially expressed genes between B-cell vs T-cell within wild-type mice.
+differentially expressed genes between mutant and wild-type within B-cells
+
+```{r, echo=TRUE}
+colData(se)
+colnames(se)
+cnames.sp=strsplit(colnames(se),"_")
+cnames.sp[1:3] #vector corresponds to three...
+# sapply calling a function that gives element number 2
+sapply(cnames.sp, function(xx) xx[2])
+colData(se)$celltype=sapply(cnames.sp,function(xx) xx[2])
+colData(se)$genotype=sapply(cnames.sp,function(xx) xx[3])
+colData(se)$mouse=paste0("m",sapply(cnames.sp,function(xx) xx[1]))
+se$genotype
+rowData(se)
+
+sapply(cnames.sp[1:3], function(xx) paste0(xx[2],xx[3]))
+lapply(cnames.sp[1:3], function(xx) paste0(xx[2],xx[3]))
+```
+
+
+```{r, echo=TRUE}
+se.b = se[,se$celltype =="B"]
+se.T = se[,se$celltype =="T"]
+se.b  = se.b[rowSums(assay(se.b)) > 12, ]
+head(assay(se.b,"counts"))
+se.b
+```
+
+
+```{r, echo=TRUE}
+#a = rowMeans(log2(assay(se.b)[,1:2]+1))
+a = rowMeans(log2(t(t(assay(se.b))/libs) [,1:2]+1))
+
+#m= assay(se.b)[,1]-assay(se.b)[,2]
+m=log2(t(t(assay(se.b)/libs)+1)[,1])-log2(t(t(assay(se.b)/libs)+1)[,2])
+                                         
+#m=log2(assay(se.b)+1)[,1]-log2(assay(se.b)+1)[,2]
+plot(a,m, pch=16, cex=0.5, main="MA plot",
+        xlab="mean of normalized counts",
+        ylab="log fold of change",
+        )
+#plot(a,m, pch=16, cex=0.5, col=("black",0.1))
+#log-transformed 
+colSums(assay(se.b))
+```
+
+
+```{r, echo=TRUE}
+libs=colSums(assay(se.b))/(30*10^6) ##library size
+
+```
+
+
+```{r, echo=TRUE}
+#install.packages("scales")
+library(scales)
+
+plot(pca$x[,1], pca$x[,2], col=as.factor(se.b$genotype), pch=16)
+se.b  = se.b[rowSums(assay(se.b)) > 12, ]
+pca = prcomp(t(log2(t(t(assay(se.b))/ libs+1))), scale. = TRUE)
+summary(pca)
+plot(pca$x[,1], pca$x[,2], col = as.factor(se.b$genotype), pch = 16)
+```
+
+
+```{r, echo=TRUE}
+
+
+library(DESeq2)
+assay(se.b) <- round(assay(se.b))
+dds <- DESeqDataSet(se.b, design= ~genotype)
+dds$genotype <- relevel(dds$genotyoe, ref="WT")
+se.b$genotype
+dds <- DESeq(dds)
+res <- results(dds)
+plotMA(res)
+vsd <- vst(dds, blind=TRUE)
+plotPCA()
+
+vsd <- vst(dds, blind=TRUE)
+library(sva)
+dat <- count(dds, normalized=TRUE)
+idx<- ROWmEANS(dat)
+dat <- dat[idx,]
+mod <- model.matrix(~genotype, colData(dds))
+mod0 <- model.matrix (~1, colData(dds))
+
+
+##return to SVA
+ddsva <- dds
+ddsva$sv1 <- svs$sv[,1]
+ddsva$sv2 <- svs$sv[,2]
+design(ddsva) <- ~genotype+sv1+sv2
+ddsva <- DESeq(ddsva)
+resva <- results(ddsva, contrast=c("genotype", "CBP". "WT"))
+
+sum(resva$padj <= 0.1, na.rm=TRUE)
+
+res
+##sva has some impact
+
+```
+#edgeR
+
+```{r, echo=TRUE}
+library(edgeR)
+design<- model.matrix (~group, data=dge$samples)
+dge <- estimateDispersions(dge, design)
+fit <- glmFit(dge, design)
+lrt <- glmLRT(fit, )
+tt <- 
+
+dge2 <- dge2
+dge$sample$sv2 <- svs2$
+  
+  
+```
+
