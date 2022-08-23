@@ -1,0 +1,157 @@
+---
+title: "hwk111"
+author: "Tanxin Liu"
+date: '2022-05-15'
+output: word_document
+---
+
+
+
+HWK 1 
+I will analyze the RNA-seq data for differential expression between wild-type and Rubenstein-Taybi (mice) in one cell type (B cell).
+```{r, echo=TRUE}
+#install.packages("BiocManager")
+library(BiocManager)
+BiocManager::install(c("limma", "edgeR", "DESeq2"))
+library(SummarizedExperiment)
+library(matrixStats)
+setwd("F:/2022 fourth term/statistic for genomics")
+
+load("rub_taybi_rnaseq_counts_matrix.rda")
+```
+
+1. EDA
+```{r, echo=TRUE}
+class(features_by_samples_mat)
+head(features_by_samples_mat)
+colSums(features_by_samples_mat)
+range(colSums(features_by_samples_mat))
+##8-10 thousand ncRNA, repetitative regions, psedogenes,
+```
+
+```{r }
+library(SummarizedExperiment)
+se <- SummarizedExperiment(assays = SimpleList(exprs = features_by_samples_mat))
+snames <- colnames(features_by_samples_mat)
+snames.sp <- strsplit(snames, "_")
+
+colData(se)$mouse <- paste0("m", sapply(snames.sp, "[[", 1))
+colData(se)$celltype <- sapply(snames.sp, "[[", 2)
+colData(se)$genotype <- sapply(snames.sp, "[[", 3)
+
+b.se <- se[, se$celltype == "B"]
+wt.se <- se[, se$genotype == "WT"]
+
+b.se <- b.se[rowSums(assay(b.se)) > 12,]
+
+libs <- colSums(assay(b.se)) / (30*10^6)
+
+b.se3 <- b.se2 <- b.se
+assay(b.se2) <- log2( assay(b.se) + 1)
+assay(b.se3) <- log2( t(t(assay(b.se)) / libs) + 2)
+```
+
+
+```{r }
+se
+```
+There are 24 samples, 27911 genes. 
+
+MA plot: differential expression between Mutant and wild-type
+```{r , echo=TRUE}
+## MA PLOT
+a = rowMeans(log2( t(t(assay(b.se))/libs)[,1:2] +1))
+m = log2(t(t(assay(b.se))/libs)+1)[,1] -log2(t(t(assay(b.se))/libs)+1)[,2]
+library(scales)
+plot(a,m, pch = 16, cex = 0.5,col = alpha("black", 0.05), xlab="mean of cell count", ylab="log 2 fold change")
+```
+
+
+```{r , echo=TRUE}
+library(DESeq2)
+assay(b.se) <- round(assay(b.se))
+dds <- DESeqDataSet(b.se, design = ~ genotype)
+dds$genotype <- relevel(dds$genotype, ref = "WT")
+dds <- DESeq(dds)
+res <- results(dds)
+plotMA(res)
+```
+
+
+```{r , echo=TRUE}
+resOrdered <- res[order(res$pvalue),]
+resOrdered
+```
+
+
+
+
+
+```{r , echo=TRUE}
+vsd <- vst(dds, blind = TRUE)
+plotPCA(vsd, intgroup = c("genotype"))
+```
+
+
+
+
+
+```{r, echo=TRUE}
+colData(se)
+colnames(se)
+cnames.sp=strsplit(colnames(se),"_")
+cnames.sp[1:3] #vector corresponds to three...
+# sapply calling a function that gives element number 2
+sapply(cnames.sp, function(xx) xx[2])
+colData(se)$celltype=sapply(cnames.sp,function(xx) xx[2])
+colData(se)$genotype=sapply(cnames.sp,function(xx) xx[3])
+colData(se)$mouse=paste0("m",sapply(cnames.sp,function(xx) xx[1]))
+se$genotype
+rowData(se)
+
+sapply(cnames.sp[1:3], function(xx) paste0(xx[2],xx[3]))
+lapply(cnames.sp[1:3], function(xx) paste0(xx[2],xx[3]))
+```
+
+
+```{r, echo=TRUE}
+b.se = se[,se$celltype =="B"]
+T.se = se[,se$celltype =="T"]
+b.se  = b.se[rowSums(assay(b.se)) > 12, ]
+
+b.se
+```
+
+
+
+
+2. Fitting a model and correct for technical confounders if necessary. In this case, consider using SVA.
+
+```{r , echo=TRUE}
+vsd <- vst(dds)
+
+library(sva)
+dat <- counts(dds, normalized = TRUE)
+idx  <- rowMeans(dat) > 1
+dat <- dat[idx,]
+
+mod <- model.matrix( ~ genotype, colData(dds))
+mod0 <- model.matrix( ~ 1, colData(dds))
+svs <- svaseq(dat, mod, mod0)
+
+## return to SVA
+ddsva <- dds
+ddsva$SV1 <- svs$sv[,1]
+ddsva$SV2 <- svs$sv[,2]
+design(ddsva) <- ~ genotype + SV1 + SV2
+ddsva <- DESeq(ddsva)
+resva <- results(ddsva, contrast = c("genotype", "CBP", "WT"))
+plotMA(resva, ylim = c(-10,10),  alpha = 0.1, 
+       main="MA plot of surrogate variable analysis comparing differential expressions in \nmutant and wild-type(ref) within B-cells")
+```
+
+
+```{r , echo=TRUE}
+resOrdered.sva <- resva[order(resva$pvalue),]
+resOrdered.sva
+```
